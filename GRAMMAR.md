@@ -33,13 +33,19 @@ toplevel_stmt:
 # Building Blocks
 # ---------------
 alphanumeric: letter | digit
-literal: numeric_literal | string_literal | boolean_literal
+literal:
+    | numeric_literal
+    | string_literal
+    | boolean_literal
+    | array_literal
 
 int_literal: digit*
 float_literal: digit* "." digit*
+
 numeric_literal: int_literal | float_literal
 string_literal: '"' .* '"'
 boolean_literal: "true" | "false"
+array_literal: "[" [ expr ("," expr)* ] "]"
 
 binary_op:
     | "+"
@@ -97,6 +103,9 @@ name: dotted_name
 
 # Expressions
 # ------------
+index_expr: 
+    | expr "[" expr "]"
+
 function_call: 
     | identifier "(" [ expr ("," expr)* ] ")"
 
@@ -108,6 +117,7 @@ expr:
     | name
     | expr binary_op expr
     | unary_op expr
+    | index_expr
     | function_call
     | if_expr
 
@@ -118,6 +128,9 @@ var_declaration:
 
 const_declaration: 
     | "const" typed_identifier "=" expr
+
+var_assign:
+    | name "=" expr
 
 fn_declaration: 
     | "fn" identifier "(" [ typed_identifier ("," typed_identifier)* ] ")" [":" type] "{" stmt* "}"
@@ -134,11 +147,16 @@ while_statement:
 return_statement: 
     | "return" expr
 
+break_statement: 
+    | "break"
+
 stmt:
+    | expr
     | var_declaration
     | const_declaration
+    | var_assign
     | for_statement
     | while_statement
     | return_statement
-    | expr
+    | break_statement
 ```

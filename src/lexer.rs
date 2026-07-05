@@ -14,6 +14,8 @@ pub enum TokenKind {
     Star,
     #[token("/")]
     Slash,
+    #[token("%")]
+    Percent,
     #[token("(")]
     LParen,
     #[token(")")]
@@ -30,12 +32,42 @@ pub enum TokenKind {
     Equals,
     #[token(".")]
     Dot,
+    #[token(",")]
+    Comma,
     #[token("..")]
     DotDot,
     #[token("...")]
     DotDotDot,
-    #[token(",")]
-    Comma,
+    #[token(":")]
+    Colon,
+
+    // Multi-character symbols
+    #[token("+=")]
+    PlusEquals,
+    #[token("-=")]
+    MinusEquals,
+    #[token("*=")]
+    StarEquals,
+    #[token("/=")]
+    SlashEquals,
+    #[token("==")]
+    DoubleEqual,
+    #[token("!=")]
+    BangEqual,
+    #[token("<")]
+    LessThan,
+    #[token("<=")]
+    LessEqual,
+    #[token(">")]
+    GreaterThan,
+    #[token(">=")]
+    GreaterEqual,
+    #[token("&&")]
+    And,
+    #[token("||")]
+    Or,
+    #[token("!")]
+    Bang,
 
     // Keywords
     #[token("arena")]
@@ -44,12 +76,14 @@ pub enum TokenKind {
     If,
     #[token("else")]
     Else,
-    #[token("while")]
-    While,
     #[token("for")]
     For,
+    #[token("while")]
+    While,
     #[token("return")]
     Return,
+    #[token("break")]
+    Break,
     #[token("fn")]
     Fn,
     #[token("struct")]
@@ -58,6 +92,10 @@ pub enum TokenKind {
     Const,
     #[token("var")]
     Var,
+    #[token("do")]
+    Do,
+    #[token("end")]
+    End,
 
     // Reserved types
     #[token(r"u[8|16|32|64]", |lex| lex.slice().parse::<i32>().ok())]
@@ -72,6 +110,12 @@ pub enum TokenKind {
     BoolType,
     #[token("void")]
     VoidType,
+
+    // For pointer/array type, don't store the lexed value to save on memory
+    #[token(r"*[\w]+")]
+    PointerType,
+    #[token(r"[\w]+[[0-9]*]")] // i32[3], f32[10], str[]
+    ArrayType,
 
     // Literals don't store the lexed value to save on memory
     #[regex(r"[0-9]+")]
