@@ -40,6 +40,8 @@ pub enum TokenKind {
     DotDotDot,
     #[token(":")]
     Colon,
+    #[token("&")]
+    Ampersand,
 
     // Multi-character symbols
     #[token("+=")]
@@ -98,12 +100,17 @@ pub enum TokenKind {
     End,
 
     // Reserved types
-    #[token(r"u[8|16|32|64]", |lex| lex.slice().parse::<i32>().ok())]
-    UnsignedType(i32),
-    #[token(r"i[8|16|32|64]", |lex| lex.slice().parse::<i32>().ok())]
-    IntType(i32),
-    #[token(r"f[32|64]", |lex| lex.slice().parse::<i32>().ok())]
-    FloatType(i32),
+
+    // Use u8 to store the size of the type, while saving bytes
+    #[regex(r"u(?:8|16|32|64)", |lex| lex.slice()[1..].parse::<u8>().ok(), priority = 3)]
+    UIntType(u8),
+    #[regex(r"i(?:8|16|32|64)", |lex| lex.slice()[1..].parse::<u8>().ok(), priority = 3)]
+    IntType(u8),
+    #[regex(r"f(?:32|64)", |lex| lex.slice()[1..].parse::<u8>().ok(), priority = 3)]
+    FloatType(u8),
+
+    #[token("char")]
+    CharType,
     #[token("str")]
     StrType,
     #[token("bool")]
@@ -112,9 +119,9 @@ pub enum TokenKind {
     VoidType,
 
     // For pointer/array type, don't store the lexed value to save on memory
-    #[token(r"*[\w]+")]
+    #[regex(r"\*[a-zA-Z0-9_]+")]
     PointerType,
-    #[token(r"[\w]+[[0-9]*]")] // i32[3], f32[10], str[]
+    #[regex(r"[a-zA-Z0-9_]+\[[0-9]*\]")] // i32[3], f32[10], str[]
     ArrayType,
 
     // Literals don't store the lexed value to save on memory
@@ -122,10 +129,23 @@ pub enum TokenKind {
     IntLit,
     #[regex(r"[0-9]+\.[0-9]+")]
     FloatLit,
+    #[regex(r"'([^'\\]|\\.)'")]
+    CharLit,
     #[regex(r#""([^"\\]|\\.)*""#)]
     StringLit,
     #[regex(r"true|false")]
     BoolLit,
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", priority = 2)]
+    Ident,
+
+    // Comments
+    #[regex(r"//[^\n]*", logos::skip, allow_greedy = true)]
+    #[regex(r"/\*([^*]|\*[^/])*\*/", logos::skip, allow_greedy = true)]
+    Comment,
+
+    // Documentation comments are preserved in the AST
+    #[regex(r"/\+([^+]|\+[^/])*\+/", allow_greedy = true)]
+    DocComment,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -157,5 +177,56 @@ impl<'a> Iterator for Lexer<'a> {
         let lexeme = self.lexer.slice();
 
         Some(Token { kind, lexeme, span })
+    }
+}
+
+// Tests
+// -------
+mod lexer_tests {
+    use super::*;
+
+    #[test]
+    fn test_comment_lexer() {
+        let source = r#"
+            // This is a comment
+            var x: i32 = 10 // This is another comment
+
+            /* 
+             * Multi
+             * line
+             * comment
+            */
+
+            /+ Nested 
+               /* Multi-line
+                  comment */
+            +/
+            const y: f32 = 3.14
+        "#;
+
+        let mut lexer = Lexer::new(source);
+
+        while let Some(token) = lexer.next() {
+            println!("{:?}", token);
+        }
+    }
+
+    #[test]
+    fn test_lexer() {
+        let source = r#"
+            var x: i32 = 10
+            const y: f32 = 3.14
+            if x > 5 then
+              x += 1
+            else
+              x -= 1;
+            end
+        "#;
+
+        let mut lexer = Lexer::new(source);
+
+        while let Some(token) = lexer.next() {
+            println!("{:?}", token);
+        }
     }
 }

@@ -104,10 +104,16 @@ name: dotted_name
 # Expressions
 # ------------
 index_expr: 
-    | expr "[" expr "]"
+    | expr "." "[" expr "]"
+
+pointer_dereference: 
+    | "*" expr
+
+pointer_address_of: 
+    | "&" expr
 
 function_call: 
-    | identifier "(" [ expr ("," expr)* ] ")"
+    | name "(" [ expr ("," expr)* ] ")"
 
 if_expr: 
     | "if" expr "then" expr ["else" expr] "end"
@@ -118,6 +124,8 @@ expr:
     | expr binary_op expr
     | unary_op expr
     | index_expr
+    | pointer_dereference
+    | pointer_address_of
     | function_call
     | if_expr
 
@@ -137,6 +145,9 @@ fn_declaration:
 
 struct_declaration: 
     | "struct" identifier typed_identifier* "end"
+
+enum_declaration: 
+    | "enum" identifier typed_identifier* "end"
 
 for_statement: 
     | "for" identifier ":" expr "do" stmt* "end"

@@ -69,6 +69,16 @@ pub enum Expr {
         index: Box<Expr>,
     },
 
+    // Pointer dereference operator: *ptr
+    Dereference {
+        pointer: Box<Expr>,
+    },
+
+    // Pointer address-of operator: &var
+    AddressOf {
+        expr: Box<Expr>,
+    },
+
     If {
         condition: Box<Expr>,
         then_branch: Block,
