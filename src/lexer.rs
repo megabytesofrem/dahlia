@@ -100,14 +100,26 @@ pub enum TokenKind {
     End,
 
     // Reserved types
-
-    // Use u8 to store the size of the type, while saving bytes
-    #[regex(r"u(?:8|16|32|64)", |lex| lex.slice()[1..].parse::<u8>().ok(), priority = 3)]
-    UIntType(u8),
-    #[regex(r"i(?:8|16|32|64)", |lex| lex.slice()[1..].parse::<u8>().ok(), priority = 3)]
-    IntType(u8),
-    #[regex(r"f(?:32|64)", |lex| lex.slice()[1..].parse::<u8>().ok(), priority = 3)]
-    FloatType(u8),
+    #[regex(r"u8")]
+    U8,
+    #[regex(r"u16")]
+    U16,
+    #[regex(r"u32")]
+    U32,
+    #[regex(r"u64")]
+    U64,
+    #[regex(r"i8")]
+    I8,
+    #[regex(r"i16")]
+    I16,
+    #[regex(r"i32")]
+    I32,
+    #[regex(r"i64")]
+    I64,
+    #[regex(r"f32")]
+    F32,
+    #[regex(r"f64")]
+    F64,
 
     #[token("char")]
     CharType,
@@ -146,11 +158,13 @@ pub enum TokenKind {
     // Documentation comments are preserved in the AST
     #[regex(r"/\+([^+]|\+[^/])*\+/", allow_greedy = true)]
     DocComment,
+
+    Error,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token<'a> {
-    pub kind: Result<TokenKind, ()>,
+    pub kind: TokenKind,
     pub lexeme: &'a str,
     pub span: Range<usize>,
 }
@@ -172,7 +186,7 @@ impl<'a> Iterator for Lexer<'a> {
     type Item = Token<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let kind = self.lexer.next()?;
+        let kind = self.lexer.next()?.unwrap_or(TokenKind::Error);
         let span = self.lexer.span();
         let lexeme = self.lexer.slice();
 

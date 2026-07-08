@@ -96,10 +96,17 @@ identifier_start: letter | "_"
 identifier: identifier_start (alphanumeric | "_")*
 typed_identifier: identifier ":" type
 
-dotted_name:
-    | identifier ("." identifier)*
+# Dotted Member Access
+# --------------------
+#   foo.bar.baz ✅
+#   Color.red   ✅
+#   foo         ❎
+dotted_member_access:
+    | identifier ("." identifier)+
 
-name: dotted_name
+name:
+    | identifier
+    | dotted_member_access
 
 # Expressions
 # ------------
@@ -144,10 +151,16 @@ fn_declaration:
     | "fn" identifier "(" [ typed_identifier ("," typed_identifier)* ] ")" [":" type] "{" stmt* "}"
 
 struct_declaration: 
-    | "struct" identifier typed_identifier* "end"
+    | "struct" identifier typed_identifier* struct_member* "end"
+
+struct_member:
+    | typed_identifier # name: type
 
 enum_declaration: 
-    | "enum" identifier typed_identifier* "end"
+    | "enum" identifier typed_identifier* enum_member* "end"
+
+enum_member:
+    | identifier # name
 
 for_statement: 
     | "for" identifier ":" expr "do" stmt* "end"

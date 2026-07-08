@@ -50,6 +50,14 @@ impl TokenKind {
         }
     }
 
+    pub fn is_binary_op(&self) -> bool {
+        self.to_binary_op().is_some()
+    }
+
+    pub fn is_unary_op(&self) -> bool {
+        self.to_unary_op().is_some()
+    }
+
     /// Convert a TokenKind to a UnaryOp, if this is a valid operator token.
     pub fn to_unary_op(&self) -> Option<UnaryOp> {
         match self {
