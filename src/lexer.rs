@@ -72,8 +72,6 @@ pub enum TokenKind {
     Bang,
 
     // Keywords
-    #[token("arena")]
-    Arena,
     #[token("if")]
     If,
     #[token("else")]
@@ -82,22 +80,24 @@ pub enum TokenKind {
     For,
     #[token("while")]
     While,
+    #[token("defer")]
+    Defer,
+    #[token("new")]
+    New,
     #[token("return")]
     Return,
     #[token("break")]
     Break,
     #[token("fn")]
     Fn,
+    #[token("enum")]
+    Enum,
     #[token("struct")]
     Struct,
     #[token("const")]
     Const,
     #[token("var")]
     Var,
-    #[token("do")]
-    Do,
-    #[token("end")]
-    End,
 
     // Reserved types
     #[regex(r"u8")]
@@ -129,6 +129,8 @@ pub enum TokenKind {
     BoolType,
     #[token("void")]
     VoidType,
+    #[token("allocator")]
+    AllocatorType,
 
     // For pointer/array type, don't store the lexed value to save on memory
     #[regex(r"\*[a-zA-Z0-9_]+")]

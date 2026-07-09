@@ -22,16 +22,14 @@ The `str` type is a pointer to a string in memory, while the `Str` type is a str
 var s: str = "hello" // s is a pointer to the string "hello" in memory
 
 // boxed strings must be allocated and freed, either manually or with an arena allocator
-arena heap allocator(1 * MIB)
+
+const GPA: allocator GPAllocator(1 * MIB) // 1 MiB arena allocator
 
 // allocate a new Str in the arena
-fn alloc_str_test() void
+fn alloc_str_test() void with GPA {
   var s: Str = Str.new_in("hello", &allocator)
-  // do something with s
-  // ...
-  // free the Str when done
-  allocator.destroy()
-end
+  defer GPA.delete(s)
+}
 ```
 
 `Str` must be managed, so `str` is preferred. You can convert from `Str` to str with `Str.to_str()`, but you lose
@@ -42,15 +40,18 @@ Dahlia has first-class support for arena allocators. There is no garbage collect
 
 ```
 const MIB: i32 = 1024 * 1024
-arena heap allocator(1 * MIB)
 
-fn alloc_test() void
-  var a: *u8 = allocator.alloc(4)
-  var b: *u8 = allocator.alloc(4)
+const GPA: allocator GPAllocator(1 * MIB) // 1 MiB arena allocator
 
-  // destroy all allocations made by this arena at the end of the function
-  allocator.destroy()
-end
+// Classical style allocation and deallocation
+fn alloc_test() void with GPA {
+  var a: *u8 = new u8[4] // allocate 4 bytes in the arena
+  defer GPA.delete(a)
+  
+  var b: *u8 = new u8[8] // allocate 8 bytes in the arena
+  defer GPA.delete(b)
+}
+
 ```
 
 Additionally, it also features pointers

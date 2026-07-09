@@ -1,52 +1,13 @@
 use crate::{
-    ast::{Expr, Literal, TypedIdentifier, types::Type},
+    ast::{DottedName, Expr, Literal, Stmt, ToplevelStmt, TypedIdentifier, types::Type},
     lexer::{Lexer, Token, TokenKind},
 };
 
 use std::iter::Peekable;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Precedence {
-    None = 0,
-    Assignment = 10,
-    LogicalOr = 20,
-    LogicalAnd = 30,
-    Equality = 40,
-    Comparison = 50,
-    Term = 60,
-    Factor = 70,
-    Unary = 80,
-    Call = 90,
-    Primary = 100,
-}
-
-impl Precedence {
-    pub fn from_token_kind(kind: &TokenKind) -> Precedence {
-        match kind {
-            // Adjust according to your language's grammar rules
-            TokenKind::Equals
-            | TokenKind::PlusEquals
-            | TokenKind::MinusEquals
-            | TokenKind::StarEquals
-            | TokenKind::SlashEquals => Precedence::Assignment,
-            TokenKind::Or => Precedence::LogicalOr,
-            TokenKind::And => Precedence::LogicalAnd,
-            TokenKind::DoubleEqual | TokenKind::BangEqual => Precedence::Equality,
-            TokenKind::LessThan
-            | TokenKind::LessEqual
-            | TokenKind::GreaterThan
-            | TokenKind::GreaterEqual => Precedence::Comparison,
-            TokenKind::Plus | TokenKind::Minus => Precedence::Term,
-            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Precedence::Factor,
-            TokenKind::LParen => Precedence::Call,
-            _ => Precedence::None,
-        }
-    }
-}
-
 pub struct Parser<'a> {
     lexer: Peekable<Lexer<'a>>,
-    position: usize,
+    pub position: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -54,11 +15,11 @@ impl<'a> Parser<'a> {
         Self { lexer, position: 0 }
     }
 
-    fn peek(&mut self) -> Option<&Token<'a>> {
+    pub fn peek(&mut self) -> Option<&Token<'a>> {
         self.lexer.peek()
     }
 
-    fn next(&mut self) -> Option<Token<'a>> {
+    pub fn next(&mut self) -> Option<Token<'a>> {
         let token = self.lexer.next();
         if let Some(ref t) = token {
             self.position = t.span.end;
@@ -67,7 +28,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Expect a specific token kind and consume it if found, otherwise return an error.
-    fn expect(&mut self, token_kind: TokenKind) -> Result<Token<'a>, String> {
+    pub fn expect(&mut self, token_kind: TokenKind) -> Result<Token<'a>, String> {
         match self.next() {
             Some(token) if token.kind == token_kind => Ok(token),
 
@@ -83,8 +44,18 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Optionally consume a specific token kind if found, otherwise do nothing.
+    #[allow(dead_code)]
+    pub fn optional(&mut self, token_kind: TokenKind) -> Option<Token<'a>> {
+        match self.peek() {
+            Some(token) if token.kind == token_kind => self.next(),
+            _ => None,
+        }
+    }
+
     /// `Parser::expect` but generalized to work on any of a set of token kinds.
-    fn any_of(&mut self, token_kinds: &[TokenKind]) -> Result<Token<'a>, String> {
+    #[allow(dead_code)]
+    pub fn any_of(&mut self, token_kinds: &[TokenKind]) -> Result<Token<'a>, String> {
         match self.next() {
             Some(token) if token_kinds.contains(&token.kind) => Ok(token),
 
@@ -102,7 +73,8 @@ impl<'a> Parser<'a> {
 
     /// `Parser::expect` but generalized to work on none of a set of token kinds.
     /// Inverse function of `Parser::any_of`.
-    fn none_of(&mut self, token_kinds: &[TokenKind]) -> Result<Token<'a>, String> {
+    #[allow(dead_code)]
+    pub fn none_of(&mut self, token_kinds: &[TokenKind]) -> Result<Token<'a>, String> {
         match self.next() {
             Some(token) if !token_kinds.contains(&token.kind) => Ok(token),
 
@@ -118,10 +90,209 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn until<T, F>(&mut self, closer: TokenKind, mut parse_element: F) -> Result<Vec<T>, String>
+    where
+        F: FnMut(&mut Self) -> Result<T, String>,
+    {
+        let mut items = Vec::new();
+
+        while let Some(token) = self.peek() {
+            if token.kind == closer {
+                break;
+            }
+
+            items.push(parse_element(self)?);
+        }
+
+        Ok(items)
+    }
+
+    #[allow(dead_code)]
+    pub fn until_any1<T, F>(
+        &mut self,
+        closers: &[TokenKind],
+        mut parse_element: F,
+    ) -> Result<Vec<T>, String>
+    where
+        F: FnMut(&mut Self) -> Result<T, String>,
+    {
+        let mut items = Vec::new();
+
+        while let Some(token) = self.peek() {
+            if closers.contains(&token.kind) {
+                break;
+            }
+
+            items.push(parse_element(self)?);
+        }
+
+        Ok(items)
+    }
+
+    #[allow(dead_code)]
+    pub fn between<T, F>(
+        &mut self,
+        start: TokenKind,
+        end: TokenKind,
+        mut parse_element: F,
+    ) -> Result<Vec<T>, String>
+    where
+        F: FnMut(&mut Self) -> Result<T, String>,
+    {
+        let mut items = Vec::new();
+
+        // Some callers (like `parse_primary` and `parse_infix`) already consume the start
+        // token before calling this, so we only consume `start` if it's actually the next token.
+        if let Some(t) = self.peek() {
+            if t.kind == start {
+                self.next();
+            }
+        }
+
+        while let Some(token) = self.peek() {
+            if token.kind == end {
+                break;
+            }
+
+            items.push(parse_element(self)?);
+        }
+
+        self.expect(end)?;
+
+        Ok(items)
+    }
+
+    #[allow(dead_code)]
+    pub fn between_delimited_by<T, F>(
+        &mut self,
+        start: TokenKind,
+        end: TokenKind,
+        delimiter: TokenKind,
+        mut parse_element: F,
+    ) -> Result<Vec<T>, String>
+    where
+        F: FnMut(&mut Self) -> Result<T, String>,
+    {
+        let mut items = Vec::new();
+        let position = self.position;
+
+        // Some callers (like `parse_primary` and `parse_infix`) already consume the start
+        // token before calling this, so we only consume `start` if it's actually the next token.
+        if let Some(t) = self.peek() {
+            if t.kind == start {
+                self.next();
+            }
+        }
+
+        // Before parsing elements, check if the list is completely empty (e.g. `[]`)
+        if let Some(token) = self.peek() {
+            if token.kind == end {
+                self.expect(end)?;
+                return Ok(items);
+            }
+        }
+
+        // Parse the first item
+        items.push(parse_element(self)?);
+
+        while let Some(token) = self.peek() {
+            if token.kind == end {
+                break;
+            }
+
+            if token.kind == delimiter {
+                self.next(); // Consume the delimiter
+
+                // Allow trailing delimiters: if the very next token is the end (e.g. `[1, 2,]`),
+                // we break without throwing an error about missing an element
+                if let Some(next_tok) = self.peek() {
+                    if next_tok.kind == end {
+                        break;
+                    }
+                }
+
+                // Parse the subsequent item
+                items.push(parse_element(self)?);
+            } else {
+                return Err(format!(
+                    "Expected delimiter {:?} or end {:?} but found {:?} at position {}",
+                    delimiter, end, token.kind, position
+                ));
+            }
+        }
+
+        self.expect(end)?;
+
+        Ok(items)
+    }
+
+    #[allow(dead_code)]
+    pub fn delimited_by<T, F>(
+        &mut self,
+        delimiter: TokenKind,
+        mut parse_element: F,
+    ) -> Result<Vec<T>, String>
+    where
+        F: FnMut(&mut Self) -> Result<T, String>,
+    {
+        let mut items = Vec::new();
+
+        // Check if there's anything to parse at all. If the current token isn't a delimiter
+        // and there's a token present, try parsing the first element.
+        if self.peek().is_some() {
+            items.push(parse_element(self)?);
+
+            while let Some(token) = self.peek() {
+                if token.kind == delimiter {
+                    self.next(); // Consume the delimiter
+
+                    // After the delimiter, parse the next element
+                    items.push(parse_element(self)?);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        Ok(items)
+    }
+
+    #[allow(dead_code)]
+    pub fn delimited_by_any1<T, F>(
+        &mut self,
+        delimiters: &[TokenKind],
+        mut parse_element: F,
+    ) -> Result<Vec<T>, String>
+    where
+        F: FnMut(&mut Self) -> Result<T, String>,
+    {
+        let mut items = Vec::new();
+
+        // Check if there's anything to parse at all. If the current token isn't a delimiter
+        // and there's a token present, try parsing the first element.
+        if self.peek().is_some() {
+            items.push(parse_element(self)?);
+
+            while let Some(token) = self.peek() {
+                if delimiters.contains(&token.kind) {
+                    self.next(); // Consume the delimiter
+
+                    // After the delimiter, parse the next element
+                    items.push(parse_element(self)?);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        Ok(items)
+    }
+
     // Parser Rules
     // ----------------
-    // NB: The parser rules are implemented following the language grammar (see GRAMMAR.md).
-    // Each rule is represented as a function in a recursive-descent parser
+    // NOTE: The parser rules are implemented following the language grammar (see GRAMMAR.md).
+    //       Each rule is represented as a function in a recursive-descent parser
     //
 
     fn identifier(&mut self) -> Result<String, String> {
@@ -143,51 +314,6 @@ impl<'a> Parser<'a> {
         };
 
         Ok((name, type_))
-    }
-
-    fn numeric_literal(&mut self) -> Result<String, String> {
-        self.any_of(&[TokenKind::IntLit, TokenKind::FloatLit])
-            .map(|token| token.lexeme.to_string())
-    }
-
-    fn bool_literal(&mut self) -> Result<String, String> {
-        self.expect(TokenKind::BoolLit)
-            .map(|token| token.lexeme.to_string())
-    }
-
-    fn array_literal(&mut self) -> Result<Vec<String>, String> {
-        self.expect(TokenKind::LBracket)?;
-        let mut elements = Vec::new();
-
-        let prev_position = self.position;
-
-        while let Some(token) = self.peek() {
-            if token.kind == TokenKind::RBracket {
-                break;
-            }
-
-            // Parse the next element
-            let element = self.numeric_literal()?;
-            elements.push(element);
-
-            // Expect a comma or closing bracket
-            match self.peek() {
-                Some(token) if token.kind == TokenKind::Comma => {
-                    self.next(); // Consume the comma
-                }
-                Some(token) if token.kind == TokenKind::RBracket => break,
-                _ => {
-                    return Err(format!(
-                        "Expected ',' or ']' but found {:?} at position {}",
-                        self.peek().map(|t| &t.kind),
-                        prev_position
-                    ));
-                }
-            }
-        }
-
-        self.expect(TokenKind::RBracket)?;
-        Ok(elements)
     }
 
     // Type Parsing
@@ -256,6 +382,22 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn allocator_type(&mut self) -> Result<Type, String> {
+        self.expect(TokenKind::AllocatorType)?;
+        let name = self.identifier()?;
+        self.expect(TokenKind::LParen)?;
+        let size_token = self.expect(TokenKind::IntLit)?;
+        let size = size_token.lexeme.parse::<usize>().map_err(|_| {
+            format!(
+                "Expected an allocator size but found {:?} at position {}",
+                size_token.lexeme, self.position
+            )
+        })?;
+        self.expect(TokenKind::RParen)?;
+
+        Ok(Type::Allocator { name, size })
+    }
+
     fn parse_type(&mut self) -> Result<Type, String> {
         let prev_position = self.position;
 
@@ -264,6 +406,8 @@ impl<'a> Parser<'a> {
 
             match token.clone().kind {
                 TokenKind::Star => self.pointer_type(),
+
+                TokenKind::AllocatorType => self.allocator_type(),
 
                 // Primitive types (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, bool, char, str, void)
                 _primitive if token_kind_type.clone().map(|t| t.is_primitive()) == Some(true) => {
@@ -290,218 +434,414 @@ impl<'a> Parser<'a> {
 
     // Expressions
     // ----------------
-    // Our Pratt parser that climbs the precedence levels, one by one
+    // NOTE: Precedence climbing (Pratt) is implemented in pratt.rs, and the rest of the expression
+    //       parsing that is not tied to precedence climbing is here.
 
-    /// Parse an expression with a default precedence of `Precedence::None`
-    pub fn parse_expression(&mut self) -> Result<Expr, String> {
-        self.parse_expression_impl(Precedence::None)
-    }
+    pub fn if_expression(&mut self) -> Result<Expr, String> {
+        self.expect(TokenKind::If)?;
 
-    /// Parse an expression with a given precedence level
-    fn parse_expression_impl(&mut self, prec: Precedence) -> Result<Expr, String> {
-        let mut lhs = self.parse_prefix()?;
+        let condition = self.parse_expression()?;
+        let then_branch = self.parse_block()?;
 
-        while let Some(next_token) = self.peek() {
-            let next_precedence = Precedence::from_token_kind(&next_token.kind);
-
-            // If the next tokens precedence is less than or equal to the current precedence,
-            // we stop parsing and return the current lhs expression.
-            if (next_precedence as u8) <= (prec as u8) {
-                break;
+        let else_branch = if let Some(token) = self.peek() {
+            if token.kind == TokenKind::Else {
+                self.next(); // Consume the "else" token
+                Some(self.parse_block()?)
+            } else {
+                None
             }
+        } else {
+            None
+        };
 
-            lhs = self.parse_infix(lhs)?;
-        }
-        Ok(lhs)
+        Ok(Expr::If {
+            condition: Box::new(condition),
+            then_branch,
+            else_branch,
+        })
     }
 
-    fn parse_prefix(&mut self) -> Result<Expr, String> {
+    pub fn parse_primary(&mut self) -> Result<Expr, String> {
         let token = self
             .next()
             .ok_or_else(|| "Unexpected end of input".to_string())?;
 
+        let is_literal = match token.kind {
+            TokenKind::IntLit
+            | TokenKind::FloatLit
+            | TokenKind::BoolLit
+            | TokenKind::StringLit
+            | TokenKind::CharLit
+            | TokenKind::LBracket => true,
+            _ => false,
+        };
+
+        if is_literal {
+            let literal = self.parse_literal(token)?;
+            return Ok(Expr::Literal(literal));
+        } else {
+            match token.kind {
+                TokenKind::Ident => {
+                    let name = token.lexeme.to_string();
+                    let identifier = TypedIdentifier {
+                        name,
+                        type_: None, // Type information can be added later if needed
+                    };
+
+                    return Ok(Expr::Identifier(identifier));
+                }
+                TokenKind::If => {
+                    let if_expr = self.if_expression()?;
+                    return Ok(if_expr);
+                }
+
+                TokenKind::LParen => {
+                    let expr = self.parse_expression()?;
+                    self.expect(TokenKind::RParen)?;
+
+                    return Ok(expr);
+                }
+                _ => {
+                    return Err(format!(
+                        "Expected a primary expression but found {:?} at position {}",
+                        token.kind, self.position
+                    ));
+                }
+            }
+        }
+    }
+
+    pub fn parse_literal(&mut self, token: Token) -> Result<Literal, String> {
         match token.kind {
             TokenKind::IntLit => {
                 let value = token
                     .lexeme
                     .parse::<i64>()
                     .map_err(|_| "Invalid integer literal".to_string())?;
-
-                Ok(Expr::Literal(Literal::Int(value)))
+                Ok(Literal::Int(value))
             }
             TokenKind::FloatLit => {
                 let value = token
                     .lexeme
                     .parse::<f64>()
                     .map_err(|_| "Invalid float literal".to_string())?;
-
-                Ok(Expr::Literal(Literal::Float(value)))
+                Ok(Literal::Float(value))
             }
             TokenKind::BoolLit => {
                 let value = token.lexeme == "true";
-                Ok(Expr::Literal(Literal::Bool(value)))
+                Ok(Literal::Bool(value))
             }
             TokenKind::StringLit => {
                 let value = token.lexeme.to_string();
-                Ok(Expr::Literal(Literal::String(value)))
+                Ok(Literal::String(value))
             }
-            TokenKind::Ident => {
-                let name = token.lexeme.to_string();
-                let identifier = TypedIdentifier {
-                    name,
-                    type_: None, // Type information can be added later if needed
-                };
-
-                Ok(Expr::Identifier(identifier))
-            }
-            TokenKind::LParen => {
-                let expr = self.parse_expression_impl(Precedence::None)?;
-                self.expect(TokenKind::RParen)?;
-                Ok(expr)
-            }
-
-            TokenKind::Minus | TokenKind::Bang | TokenKind::Ampersand | TokenKind::Star => {
-                let op = token.kind.clone().to_unary_op().ok_or_else(|| {
+            TokenKind::CharLit => {
+                let value = token.lexeme.chars().next().ok_or_else(|| {
                     format!(
-                        "Expected a unary operator but found {:?} at position {}",
-                        token.kind, self.position
+                        "Invalid character literal: {:?} at position {}",
+                        token.lexeme, self.position
                     )
                 })?;
+                Ok(Literal::Char(value))
+            }
+            TokenKind::LBracket => {
+                let elements = self.between_delimited_by(
+                    TokenKind::LBracket,
+                    TokenKind::RBracket,
+                    TokenKind::Comma,
+                    |p| p.parse_expression(),
+                )?;
 
-                // Parse the right hand side of the unary operator with the highest precedence
-                let rhs = self.parse_expression_impl(Precedence::Unary)?;
-                Ok(Expr::UnaryOp {
-                    op,
-                    expr: Box::new(rhs),
+                Ok(Literal::Array {
+                    elements,
+                    element_type: None,
                 })
             }
 
-            _ => Err(format!("Expected expression, but found {:?}", token.kind)),
+            _ => Err(format!(
+                "Expected a literal but found {:?} at position {}",
+                token.kind, self.position
+            )),
         }
     }
-
-    fn parse_infix(&mut self, lhs: Expr) -> Result<Expr, String> {
-        let token = self
-            .next()
-            .ok_or_else(|| "Unexpected end of input".to_string())?;
-
-        // Parse special cases for function calls, array indexing, etc
-        match token.kind {
-            TokenKind::LParen => {
-                return self.parse_call_expression(lhs);
-            }
-
-            TokenKind::LBracket => {
-                return self.parse_index_expression(lhs);
-            }
-
-            TokenKind::Star => {
-                return self.parse_pointer_dereference(lhs);
-            }
-
-            TokenKind::Ampersand => {
-                return self.parse_pointer_address_of(lhs);
-            }
-
-            _ => {}
-        }
-
-        // Parse binary operators
-        if let Some(op) = token.kind.clone().to_binary_op() {
-            let precedence = Precedence::from_token_kind(&token.kind);
-
-            // For left-associative operators, we use the current precedence level for rhs
-            // For right-associative operators, we use one level lower precedence for rhs
-            let rhs = self.parse_expression_impl(precedence)?;
-
-            return Ok(Expr::BinaryOp {
-                left: Box::new(lhs),
-                op,
-                right: Box::new(rhs),
-            });
-        }
-
-        Err(format!(
-            "Expected infix operator, but found {:?}",
-            token.kind
-        ))
-    }
-
-    fn parse_pointer_dereference(&mut self, pointer: Expr) -> Result<Expr, String> {
-        // *ptr
-        Ok(Expr::Dereference {
-            pointer: Box::new(pointer),
-        })
-    }
-
-    fn parse_pointer_address_of(&mut self, expr: Expr) -> Result<Expr, String> {
-        // &var
-        Ok(Expr::AddressOf {
-            expr: Box::new(expr),
-        })
-    }
-
-    fn parse_index_expression(&mut self, array: Expr) -> Result<Expr, String> {
-        // arr.[0]
-        self.expect(TokenKind::LBracket)?;
-        let index = self.parse_expression_impl(Precedence::None)?;
-        self.expect(TokenKind::RBracket)?;
-
-        Ok(Expr::Index {
-            array: Box::new(array),
-            index: Box::new(index),
-        })
-    }
-
-    fn parse_call_expression(&mut self, callee: Expr) -> Result<Expr, String> {
-        // foo(1, 2, 3)
-        let mut args = Vec::new();
-
-        // If the next token is not a closing parenthesis, we have arguments to parse
-        if let Some(token) = self.peek() {
-            if token.kind != TokenKind::RParen {
-                loop {
-                    let arg = self.parse_expression_impl(Precedence::None)?;
-                    args.push(arg);
-
-                    // If the next token is a comma, we have more arguments to parse
-                    if let Some(token) = self.peek() {
-                        if token.kind == TokenKind::Comma {
-                            self.next();
-                            continue;
-                        }
-                    }
-
-                    // If the next token is not a comma, we expect a closing parenthesis
-                    break;
-                }
-            }
-        }
-
-        self.expect(TokenKind::RParen)?;
-
-        Ok(Expr::Call {
-            callee: Box::new(callee),
-            args,
-        })
-    }
-    // -- End of Pratt parser implementation --
 
     // ----------------------
+
+    // Statements
+    // ----------------------
+    fn parse_block(&mut self) -> Result<Vec<Stmt>, String> {
+        let statements = self.between(TokenKind::LBrace, TokenKind::RBrace, |p| {
+            p.parse_statement()
+        })?;
+
+        Ok(statements)
+    }
+
+    fn parse_statement(&mut self) -> Result<Stmt, String> {
+        let token = self
+            .peek()
+            .ok_or_else(|| "Unexpected end of input".to_string())?;
+
+        match token.kind {
+            TokenKind::Var => self.var_declaration(),
+            TokenKind::Const => self.const_declaration(),
+            TokenKind::Ident => self.var_assign(),
+            TokenKind::For => self.for_loop(),
+            TokenKind::While => self.while_loop(),
+            TokenKind::Defer => self.defer_statement(),
+            TokenKind::New => self.new_statement(),
+            TokenKind::Return => self.return_statement(),
+            TokenKind::Break => self.break_statement(),
+
+            _ => self.stmt_expr(),
+        }
+    }
+
+    fn stmt_expr(&mut self) -> Result<Stmt, String> {
+        let expr = self.parse_expression()?;
+        Ok(Stmt::Expr(expr))
+    }
+
+    fn var_declaration(&mut self) -> Result<Stmt, String> {
+        // var_declaration:
+        //    | "var" typed_identifier "=" expr
+
+        self.expect(TokenKind::Var)?;
+
+        let (name, type_) = self.typed_identifier()?;
+        let value = self.parse_expression()?;
+
+        Ok(Stmt::VarDeclaration {
+            name: TypedIdentifier { name, type_ },
+            value,
+        })
+    }
+
+    fn var_assign(&mut self) -> Result<Stmt, String> {
+        // var_assign:
+        //    | identifier "=" expr
+
+        let ident = self.identifier()?;
+        self.expect(TokenKind::Equals)?;
+        let value = self.parse_expression()?;
+
+        Ok(Stmt::Assign { name: ident, value })
+    }
+
+    fn const_declaration(&mut self) -> Result<Stmt, String> {
+        // const_declaration:
+        //    | "const" typed_identifier "=" expr
+
+        self.expect(TokenKind::Const)?;
+
+        let (name, type_) = self.typed_identifier()?;
+        let value = self.parse_expression()?;
+
+        Ok(Stmt::ConstDeclaration {
+            name: TypedIdentifier { name, type_ },
+            value,
+        })
+    }
+
+    fn for_loop(&mut self) -> Result<Stmt, String> {
+        // for_loop:
+        //    | "for" typed_identifier ":" expr "{" stmt* "}"
+
+        self.expect(TokenKind::For)?;
+
+        let iterator = self.typed_identifier()?;
+        self.expect(TokenKind::Colon)?;
+        let iterable = self.parse_expression()?;
+
+        let body = self.parse_block()?;
+
+        Ok(Stmt::For {
+            iterator: TypedIdentifier {
+                name: iterator.0,
+                type_: iterator.1,
+            },
+            iterable,
+            body,
+        })
+    }
+
+    fn while_loop(&mut self) -> Result<Stmt, String> {
+        // while_loop:
+        //    | "while" expr "{" stmt* "}"
+
+        self.expect(TokenKind::While)?;
+
+        let condition = self.parse_expression()?;
+        let body = self.parse_block()?;
+
+        Ok(Stmt::While { condition, body })
+    }
+
+    fn defer_statement(&mut self) -> Result<Stmt, String> {
+        // defer_statement:
+        //    | "defer" stmt
+
+        self.expect(TokenKind::Defer)?;
+
+        let stmt = self.parse_statement()?;
+
+        Ok(Stmt::Defer {
+            stmt: Box::new(stmt),
+        })
+    }
+
+    fn new_statement(&mut self) -> Result<Stmt, String> {
+        // new_statement:
+        //    | "new" name "(" [ expr ("," expr)* ] ")"
+        //    | "new" type "[" expr "]"
+
+        todo!()
+    }
+
+    fn return_statement(&mut self) -> Result<Stmt, String> {
+        // return_statement:
+        //    | "return" expr?
+
+        self.expect(TokenKind::Return)?;
+
+        let value = if let Some(token) = self.peek() {
+            if token.kind != TokenKind::RBrace {
+                Some(self.parse_expression()?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        Ok(Stmt::Return { value })
+    }
+
+    fn break_statement(&mut self) -> Result<Stmt, String> {
+        // break_statement:
+        //    | "break"
+
+        self.expect(TokenKind::Break)?;
+
+        Ok(Stmt::Break)
+    }
+
+    // Toplevel Statements
+    // ----------------------
+    fn struct_member(&mut self) -> Result<TypedIdentifier, String> {
+        let (name, type_) = self.typed_identifier()?;
+        Ok(TypedIdentifier { name, type_ })
+    }
+
+    fn struct_declaration(&mut self) -> Result<ToplevelStmt, String> {
+        // struct_declaration:
+        //    | "struct" identifier "{" (struct_member ",")* "}"
+
+        self.expect(TokenKind::Struct)?;
+        let name = self.identifier()?;
+        self.expect(TokenKind::LBrace)?;
+        let members = self.delimited_by(TokenKind::Comma, |p| p.struct_member())?;
+        self.expect(TokenKind::RBrace)?;
+
+        Ok(ToplevelStmt::StructDeclaration {
+            name,
+            fields: members,
+        })
+    }
+
+    fn enum_member(&mut self) -> Result<String, String> {
+        let name = self.identifier()?;
+        Ok(name)
+    }
+
+    fn enum_declaration(&mut self) -> Result<ToplevelStmt, String> {
+        // enum_declaration:
+        //    | "enum" identifier "{" (enum_member ",")* "}"
+
+        self.expect(TokenKind::Enum)?;
+        let name = self.identifier()?;
+        self.expect(TokenKind::LBrace)?;
+        let members = self.delimited_by(TokenKind::Comma, |p| p.enum_member())?;
+        self.expect(TokenKind::RBrace)?;
+
+        Ok(ToplevelStmt::EnumDeclaration {
+            name,
+            variants: members
+                .into_iter()
+                .map(|member| TypedIdentifier {
+                    name: member,
+                    type_: None,
+                })
+                .collect(),
+        })
+    }
+
+    fn fn_declaration(&mut self) -> Result<ToplevelStmt, String> {
+        // fn_declaration:
+        //    | "fn" identifier "(" [ typed_identifier ("," typed_identifier)* ] ")" "{" stmt* "}"
+
+        self.expect(TokenKind::Fn)?;
+        let name = self.identifier()?;
+        self.expect(TokenKind::LParen)?;
+        let params = self.delimited_by(TokenKind::Comma, |p| p.typed_identifier())?;
+        self.expect(TokenKind::RParen)?;
+        let body = self.parse_block()?;
+
+        Ok(ToplevelStmt::FnDeclaration {
+            name: TypedIdentifier { name, type_: None },
+            params: params
+                .into_iter()
+                .map(|(name, type_)| TypedIdentifier { name, type_ })
+                .collect(),
+            body,
+        })
+    }
+
+    pub fn parse_toplevel_stmt(&mut self) -> Result<ToplevelStmt, String> {
+        let token = self
+            .peek()
+            .ok_or_else(|| "Unexpected end of input".to_string())?;
+
+        match token.kind {
+            TokenKind::Fn => self.fn_declaration(),
+            TokenKind::Struct => self.struct_declaration(),
+            TokenKind::Enum => self.enum_declaration(),
+            _ => {
+                let stmt = self.parse_statement()?;
+                Ok(ToplevelStmt::Stmt(stmt))
+            }
+        }
+    }
+
+    // AST
+    // ----------------------
+    pub fn parse(&mut self) -> Result<Vec<ToplevelStmt>, String> {
+        let mut toplevel_stmts = Vec::new();
+
+        while self.peek().is_some() {
+            let stmt = self.parse_toplevel_stmt()?;
+            toplevel_stmts.push(stmt);
+        }
+
+        Ok(toplevel_stmts)
+    }
 }
 
 impl<'a> Iterator for Parser<'a> {
     type Item = Token<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next()
+        self.lexer.next()
     }
 }
 
 // Tests
 // -------
+
+#[cfg(test)]
 mod parser_tests {
     use super::*;
+    use crate::lexer::Lexer;
 
     #[test]
     fn parse_expression() {
@@ -519,7 +859,7 @@ mod parser_tests {
         let lexer = Lexer::new(source);
         let mut parser = Parser::new(lexer);
 
-        let array = parser.array_literal();
+        let array = parser.parse_expression();
         assert!(array.is_ok());
     }
 
@@ -529,7 +869,7 @@ mod parser_tests {
         let lexer = Lexer::new(source);
         let mut parser = Parser::new(lexer);
 
-        let literal = parser.numeric_literal();
+        let literal = parser.parse_expression();
         assert!(literal.is_ok());
     }
 
@@ -551,5 +891,25 @@ mod parser_tests {
 
         let expr = parser.parse_expression();
         assert!(expr.is_ok());
+    }
+
+    #[test]
+    fn parse_struct_declaration() {
+        let source = "struct Point { x: i32, y: i32 }";
+        let lexer = Lexer::new(source);
+        let mut parser = Parser::new(lexer);
+
+        let struct_decl = parser.struct_declaration();
+        assert!(struct_decl.is_ok());
+    }
+
+    #[test]
+    fn parse_fn_declaration() {
+        let source = "fn add(a: i32, b: i32) { return a + b }";
+        let lexer = Lexer::new(source);
+        let mut parser = Parser::new(lexer);
+
+        let fn_decl = parser.fn_declaration();
+        assert!(fn_decl.is_ok());
     }
 }

@@ -24,6 +24,11 @@ pub enum Type {
 
     Pointer(Box<Type>),
 
+    Allocator {
+        name: String,
+        size: usize,
+    },
+
     Array {
         element_type: Box<Type>,
         size: usize,

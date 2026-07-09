@@ -12,15 +12,18 @@ pub type Block = Vec<Stmt>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
+    #[allow(dead_code)]
     UInt(u64),
+
     Int(i64),
     Float(f64),
     String(String),
+    Char(char),
     Bool(bool),
 
     // Fixed-size arrays
     Array {
-        elements: Vec<Literal>,
+        elements: Vec<Expr>,
         element_type: Option<Type>,
     },
 }
@@ -34,8 +37,8 @@ pub struct TypedIdentifier {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DottedName {
-    pub base: TypedIdentifier,
-    pub field: String,
+    pub base: String,
+    pub field: Box<DottedName>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,7 +105,7 @@ pub enum Stmt {
     },
 
     Assign {
-        target: Expr,
+        name: String,
         value: Expr,
     },
 
@@ -117,9 +120,15 @@ pub enum Stmt {
         body: Block,
     },
 
+    Defer {
+        stmt: Box<Stmt>,
+    },
+
     Return {
         value: Option<Expr>,
     },
+
+    Break,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -133,8 +142,13 @@ pub enum ToplevelStmt {
         body: Block,
     },
 
+    EnumDeclaration {
+        name: String,
+        variants: Vec<TypedIdentifier>,
+    },
+
     StructDeclaration {
-        name: TypedIdentifier,
+        name: String,
         fields: Vec<TypedIdentifier>,
     },
 }

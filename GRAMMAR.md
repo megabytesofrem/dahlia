@@ -77,6 +77,7 @@ type:
     | str_type
     | pointer_type
     | array_type
+    | allocator_type
     | user_defined_type
 
 signed_int_type: "i8" | "i16" | "i32" | "i64"
@@ -86,6 +87,7 @@ bool_type: "bool"
 str_type: "str"
 pointer_type: "*" type
 array_type: type "[" [number] "]"
+allocator_type: "allocator" identifier "(" [number] ")"
 user_defined_type: identifier
 
 # Identifiers
@@ -123,7 +125,7 @@ function_call:
     | name "(" [ expr ("," expr)* ] ")"
 
 if_expr: 
-    | "if" expr "then" expr ["else" expr] "end"
+    | "if" expr "{" stmt* "}" ["else" "{" stmt* "}"]
 
 expr:
     | literal
@@ -148,28 +150,36 @@ var_assign:
     | name "=" expr
 
 fn_declaration: 
-    | "fn" identifier "(" [ typed_identifier ("," typed_identifier)* ] ")" [":" type] "{" stmt* "}"
+    | "fn" identifier "(" [ typed_identifier ("," typed_identifier)* ] ")" [":" type] ["with" name] "{" stmt* "}"
 
 struct_declaration: 
-    | "struct" identifier typed_identifier* struct_member* "end"
+    | "struct" identifier typed_identifier* struct_member* "{" stmt* "}"
 
 struct_member:
     | typed_identifier # name: type
 
 enum_declaration: 
-    | "enum" identifier typed_identifier* enum_member* "end"
+    | "enum" identifier typed_identifier* enum_member* "{" stmt* "}"
 
 enum_member:
     | identifier # name
 
-for_statement: 
-    | "for" identifier ":" expr "do" stmt* "end"
+for_loop: 
+    | "for" identifier ":" expr "{" stmt* "}"
 
-while_statement: 
-    | "while" expr "do" stmt* "end"
+while_loop: 
+    | "while" expr "{" stmt* "}"
+
+defer_statement:
+    | "defer" stmt
+
+new_statement:
+    | "new" name "(" [ expr ("," expr)* ] ")" # new Struct() or new Struct(x, y, z)
+    | "new" type "[" expr "]"                 # new u8[n]
 
 return_statement: 
     | "return" expr
+    | "return" "void"
 
 break_statement: 
     | "break"
@@ -179,8 +189,10 @@ stmt:
     | var_declaration
     | const_declaration
     | var_assign
-    | for_statement
-    | while_statement
+    | for_loop
+    | while_loop
+    | defer_statement
+    | new_statement
     | return_statement
     | break_statement
 ```
