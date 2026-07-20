@@ -4,9 +4,13 @@
 
 use crate::lexer::TokenKind;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TypeId(pub usize);
+
 /// The type of a variable, function, or expression
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
+    // Primitive types
     U8,
     U16,
     U32,
@@ -22,6 +26,16 @@ pub enum Type {
     Str,
     Void,
 
+    // Type variable for polymorphic types
+    Var(TypeId),
+
+    // Polymorphic type: forall a b c . Type
+    Forall(Vec<TypeId>, Box<Type>),
+
+    // All of the following are type constructors (Type a)
+    // - *A (boxed type)
+    // - allocator A(size)
+    // - [A; size]
     Pointer(Box<Type>),
 
     Allocator {
@@ -32,6 +46,11 @@ pub enum Type {
     Array {
         element_type: Box<Type>,
         size: usize,
+    },
+
+    Function {
+        param_types: Vec<Type>,
+        return_type: Box<Type>,
     },
 }
 
@@ -88,7 +107,17 @@ impl Type {
         matches!(self, Type::Array { .. })
     }
 
+    pub fn is_allocator(&self) -> bool {
+        matches!(self, Type::Allocator { .. })
+    }
+
     pub fn is_primitive(&self) -> bool {
-        !self.is_boxed()
+        !self.is_boxed() && !self.is_polymorphic() && !self.is_array() && !self.is_allocator()
+    }
+
+    // Polymorphic types are types that contain type variables, e.g. forall a b c . Type
+    // Forall (universal quantification) is a representation of polymorphic types.
+    pub fn is_polymorphic(&self) -> bool {
+        matches!(self, Type::Forall(_, _))
     }
 }

@@ -64,6 +64,37 @@ a_string_ptr[0] = 'H' // a_string is now "Hello"
 const a_string_ptr2: const *str = &a_string
 ```
 
+## Type System
+The type system is based on Hindley Milner.
+
+There are no objects, but there are structs and type classes (Rust/Haskell traits). Dahlia is a statically typed language, and all types must be known at compile time. `[]` is used to denote generic type parameters and arrays are indexed using `.[idx]` as a consequence.
+
+```
+// Type alias does not create a new type, it just gives a new name to an existing type
+type MyInt i32
+
+// Type class defined using 'typeclass' and 'has' keywords
+typeclass Eq[A] has {
+  required fn eq(a: A, b: A) bool
+  required fn not_eq(a: A, b: A) bool
+}
+
+impl Eq for i32 {
+  fn eq(a: i32, b: i32) bool {
+    return a == b
+  }
+
+  fn not_eq(a: i32, b: i32) bool {
+    return a != b
+  }
+}
+
+fn is_equal[A: Eq](a: A, b: A) bool {
+  return a.eq(b)
+}
+```
+
+
 ## Plans
 - Core language features
 - Generics
