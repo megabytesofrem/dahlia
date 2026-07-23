@@ -4,17 +4,130 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::types::{Type, TypeId},
+    ast::{
+        Expr, Literal,
+        operator::{BinaryOp, UnaryOp},
+        types::{Type, TypeId},
+    },
     middle::typesubst::{TypeScheme, TypeSubst, UnifyError, bind_var, deref, ftv},
 };
 
 // Type environment mapping variable names -> type schemes
 pub type TypeEnv = HashMap<String, TypeScheme>;
 
+#[derive(Debug)]
+pub enum TypeError {
+    UnknownName(String),
+    NotAFunction(Type),
+    NotAPointer(Type),
+
+    ReturnOutsideFunction,
+    BreakOutsideLoop,
+
+    // Unification errors
+    Unify(UnifyError),
+}
+
+impl From<UnifyError> for TypeError {
+    fn from(err: UnifyError) -> Self {
+        TypeError::Unify(err)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Typecheck {
     subst: TypeSubst,
     env: TypeEnv,
     var_count: usize,
+    curr_return_type: Option<Type>,
+    loop_depth: usize,
+}
+
+impl Typecheck {
+    pub fn check_expr(&mut self, expr: &Expr) -> Result<(), TypeError> {
+        todo!()
+    }
+
+    // Inference
+    // ----------------
+
+    pub fn infer_literal(&mut self, lit: &Literal) -> Result<Type, TypeError> {
+        match lit {
+            Literal::Int(_) => Ok(Type::ISize),
+            Literal::UInt(_) => Ok(Type::USize),
+            Literal::Float(_) => Ok(Type::F64),
+            Literal::Bool(_) => Ok(Type::Bool),
+            Literal::String(_) => Ok(Type::Str),
+            Literal::Char(_) => Ok(Type::Char),
+            Literal::Array {
+                elements,
+                element_type,
+            } => Ok(Type::Array {
+                element_type: Box::new(self.infer_expr(&elements[0])?),
+                size: elements.len(),
+            }),
+        }
+    }
+
+    pub fn infer_unary(&mut self, op: &UnaryOp, expr: &Expr) -> Result<Type, TypeError> {
+        let expr_type = self.infer_expr(expr)?;
+
+        match op {
+            UnaryOp::Negate => {
+                if expr_type.is_signed() {
+                    Ok(expr_type)
+                } else {
+                    Err(TypeError::Unify(UnifyError::Mismatch {
+                        expected: Type::I32,
+                        found: expr_type,
+                    }))
+                }
+            }
+            UnaryOp::Not => {
+                if expr_type == Type::Bool {
+                    Ok(Type::Bool)
+                } else {
+                    Err(TypeError::Unify(UnifyError::Mismatch {
+                        expected: Type::Bool,
+                        found: expr_type,
+                    }))
+                }
+            }
+            UnaryOp::Deref => match expr_type {
+                Type::Pointer(inner) => Ok(*inner),
+                _ => Err(TypeError::NotAPointer(expr_type)),
+            },
+            UnaryOp::Ref => Ok(Type::Pointer(Box::new(expr_type))),
+        }
+    }
+
+    pub fn infer_binary(
+        &mut self,
+        left: &Expr,
+        op: &BinaryOp,
+        right: &Expr,
+    ) -> Result<Type, TypeError> {
+        let left_type = self.infer_expr(left)?;
+        let right_type = self.infer_expr(right)?;
+
+        todo!()
+    }
+
+    pub fn infer_expr(&mut self, expr: &Expr) -> Result<Type, TypeError> {
+        match expr {
+            Expr::Literal(lit) => self.infer_literal(lit),
+            Expr::Identifier(id) => self
+                .lookup(&id.name)
+                .ok_or(TypeError::UnknownName(id.name.clone())),
+            Expr::Dotted(_name) => todo!("Field and enum access not implemented yet"),
+            Expr::UnaryOp { op, expr } => self.infer_unary(op, expr),
+            Expr::BinaryOp { left, op, right } => self.infer_binary(left, op, right),
+
+            _ => todo!("Function calls, indexing, and pointer dereference not implemented yet"),
+        }
+    }
+
+    // --------------------------------
 }
 
 impl Typecheck {
@@ -23,6 +136,8 @@ impl Typecheck {
             subst: TypeSubst::new(),
             env: HashMap::new(),
             var_count: 0,
+            curr_return_type: None,
+            loop_depth: 0,
         }
     }
 
@@ -75,14 +190,6 @@ impl Typecheck {
             bound_vars: free_in_type,
             ty,
         }
-    }
-
-    pub fn check(&mut self, ty1: &Type, ty2: &Type) -> Result<(), UnifyError> {
-        self.unify(ty1, ty2)
-    }
-
-    pub fn infer(&mut self, ty: &Type) -> Type {
-        todo!("Proper type inference is not yet implemented");
     }
 
     pub fn unify(&mut self, t1: &Type, t2: &Type) -> Result<(), UnifyError> {

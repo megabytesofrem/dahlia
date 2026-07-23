@@ -21,6 +21,8 @@ pub enum Type {
     I64,
     F32,
     F64,
+    ISize,
+    USize,
     Bool,
     Char,
     Str,
@@ -86,15 +88,23 @@ impl Type {
                 | Type::I64
                 | Type::F32
                 | Type::F64
+                | Type::ISize
+                | Type::USize
         )
     }
 
     pub fn is_unsigned(&self) -> bool {
-        matches!(self, Type::U8 | Type::U16 | Type::U32 | Type::U64)
+        matches!(
+            self,
+            Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::USize
+        )
     }
 
     pub fn is_signed(&self) -> bool {
-        matches!(self, Type::I32 | Type::I64)
+        matches!(
+            self,
+            Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::ISize
+        )
     }
 
     // Boxed types require managing their memory lifecycles, so they are treated specially

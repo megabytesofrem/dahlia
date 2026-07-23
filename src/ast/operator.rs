@@ -24,8 +24,10 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOp {
-    Negate,
-    Not,
+    Negate, // -a
+    Not,    // !a
+    Deref,  // *a
+    Ref,    // &a
 }
 
 impl TokenKind {
@@ -63,6 +65,8 @@ impl TokenKind {
         match self {
             TokenKind::Minus => Some(UnaryOp::Negate),
             TokenKind::Bang => Some(UnaryOp::Not),
+            TokenKind::Star => Some(UnaryOp::Deref),
+            TokenKind::Ampersand => Some(UnaryOp::Ref),
             _ => None,
         }
     }

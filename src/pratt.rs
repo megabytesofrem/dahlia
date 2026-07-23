@@ -1,8 +1,4 @@
-use crate::{
-    ast::{Expr, Literal, TypedIdentifier},
-    lexer::{Token, TokenKind},
-    parser::Parser,
-};
+use crate::{ast::Expr, lexer::TokenKind, parser::Parser};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Precedence {
@@ -16,6 +12,8 @@ pub enum Precedence {
     Factor = 70,
     Unary = 80,
     Call = 90,
+
+    #[allow(dead_code)]
     Primary = 100,
 }
 
@@ -122,14 +120,6 @@ impl<'a> Parser<'a> {
                 return self.parse_index_expression(lhs);
             }
 
-            TokenKind::Star => {
-                return self.parse_pointer_dereference(lhs);
-            }
-
-            TokenKind::Ampersand => {
-                return self.parse_pointer_address_of(lhs);
-            }
-
             _ => {}
         }
 
@@ -152,20 +142,6 @@ impl<'a> Parser<'a> {
             "Expected infix operator, but found {:?}",
             token.kind
         ))
-    }
-
-    fn parse_pointer_dereference(&mut self, pointer: Expr) -> Result<Expr, String> {
-        // *ptr
-        Ok(Expr::Dereference {
-            pointer: Box::new(pointer),
-        })
-    }
-
-    fn parse_pointer_address_of(&mut self, expr: Expr) -> Result<Expr, String> {
-        // &var
-        Ok(Expr::AddressOf {
-            expr: Box::new(expr),
-        })
     }
 
     fn parse_index_expression(&mut self, array: Expr) -> Result<Expr, String> {

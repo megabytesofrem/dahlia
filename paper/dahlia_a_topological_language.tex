@@ -1,0 +1,346 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathpartir}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\newtheorem{definition}{Definition}[section]
+\newcommand{\syn}{\Rightarrow} % Synthesis/inference
+\newcommand{\chk}{\Leftarrow} % Checking
+
+\title{Dahlia: A Topological Systems Programming Language}
+\author{Charlotte W.}
+\date{\today}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+    Dahlia is a new systems programming language that uses topological semantics to reason about region-based memory safety mathematically. It models lexical scopes as a Grothendieck site whose sheaf category forms a 1-topos, evaluated as a directed acyclic graph (DAG) during compilation. This approach guarantees zero-cost memory safety without the complexity of an operational borrow checker, while seamlessly enabling mutually recursive data structures and explicit hardware topology mapping.
+\end{abstract}
+
+\tableofcontents
+
+\pagebreak
+
+\section{Introduction}
+
+\subsection{Motivation}
+The traditional flat memory model employed by most systems programming languages introduces severe memory safety risks, including dangling pointers, use-after-free errors, and memory leaks. Modern languages like Rust address these issues using a borrow checker; however, this approach introduces significant engineering friction. The borrow checker relies on a complex operational lifetime solver (over 50,000 lines of source code), can be overly restrictive, and makes mutually recursive data structures notoriously difficult to implement, often forcing programmers to fall back on runtime wrappers such as \texttt{Box<T>}, \texttt{RefCell<T>}, or \texttt{Rc<T>}.
+
+Dahlia introduces a fundamentally different paradigm. Rather than treating memory as a flat sequence of bytes governed by temporal lifetime rules, Dahlia models memory spatially. Each scope in the AST is treated as an open set within a Grothendieck site, allowing the compiler's static analysis pass (the ``topology checker'') to verify memory safety via fast, $O(1)$ reachability checks over a site DAG.
+
+\subsection{Thesis}
+We present Dahlia, a systems language where scope hierarchies and memory arenas are structured as a Grothendieck site whose sheaf category forms a 1-topos.
+The language is an experiment to explore the practical application of modelling memory safety as a region-based topological problem, rather than a temporal one (lifetime-based).
+
+\pagebreak
+\section{The Dahlia Memory Model}
+
+\subsection{Spatial Memory and Region Semantics}
+Dahlia replaces implicit temporal lifetimes with explicit spatial regions denoted by tick annotations (\texttt{'s0}, \texttt{'s1}). Regions represent distinct bump-pointer arenas tied to AST scopes or custom site topologies.
+
+\subsubsection{1. Region Allocation}
+Lexical scopes and generic parameters define explicit spatial regions. Annotations such as \texttt{'s0} explicitly identify objects (open sets) within the underlying site graph.
+
+\subsubsection{2. Local Allocation}
+The built-in operation \texttt{local('s0, size)} allocates memory within the bump-pointer arena corresponding to region \texttt{'s0}.
+
+\subsubsection{3. Topological Reachability Constraints}
+Generic functions accept explicit morphism paths using directional operators, such as \texttt{'s0 \textasciitilde\textasciitilde> 's1}. This asserts a directed reachability path from region \texttt{'s0} to region \texttt{'s1}, proving at compile time that data can safely flow between these boundaries.
+
+\subsubsection{4. Section Promotion}
+To transfer data safely out of an inner scope, Dahlia provides the \texttt{promote('s0, 's1, ptr)} construct. This operation re-parents an allocation from an inner region \texttt{'s1} to an outer region \texttt{'s0}, preventing dangling references upon scope termination.
+
+\subsection{Language Syntax in Practice}
+
+In Dahlia, regions can be nested, and spatial arrows explicitly annotate memory movement:
+
+\begin{lstlisting}[language=C]
+fn alloc_test() void 'r0 {
+  var final_str: Str 'r0 = Str.new('r0, "")
+
+  'r1 {
+    var inner_str: Str 'r1 = Str.new('r1, "hello")
+    // Explicitly promote string from 'r1 to 'r0
+    final_str = promote('r1, 'r0, inner_str) 'r0
+  }
+
+  return final_str 'r0
+}
+
+// Function with an explicit directional path constraint between sheaves
+fn dependency['r0: sheaf, 'r1: sheaf, A](path 'r0 ~~> 'r1, value: A) A 'r1 {
+  return promote('r0, 'r1, value) 'r1
+}
+\end{lstlisting}
+
+\section{Theoretical Foundations: Sheaves and 1-Topoi}
+
+While Dahlia presents a clean region-based abstraction to the programmer (similar to languages like ML-Kit and Cyclone), its static safety proofs are mathematically grounded in sheaf theory over a Grothendieck site, forming a 1-topos.
+
+\subsection{Grothendieck Sites and Sheaves}
+
+\begin{definition}[Grothendieck Site]
+    A \emph{Grothendieck site} is a pair $(\mathcal{C}, J)$ where $\mathcal{C}$ is a category and $J$ is a Grothendieck topology on $\mathcal{C}$. The topology $J$ assigns to each object $U \in \text{Ob}(\mathcal{C})$ a collection $J(U)$ of covering sieves, which are families of morphisms $\{U_i \to U\}_{i \in I}$ satisfying standard intersection, pullback, and transitivity axioms.
+\end{definition}
+
+\begin{definition}[Presheaf]
+    Let $\mathcal{C}$ be a category. A \emph{presheaf} on $\mathcal{C}$ is a contravariant functor $P : \mathcal{C}^{\text{op}} \to \mathbf{Set}$. For any morphism $f : V \to U$, the induced map $P(f) : P(U) \to P(V)$ is the \emph{restriction map}.
+
+    \vspace{0.5em}
+    \noindent\textit{Intuition:} A presheaf assigns to each spatial region $U$ a set of valid memory sections (pointers, variables), providing a restriction mechanism to view global data within local sub-scopes.
+\end{definition}
+
+\begin{definition}[Sheaf over a Grothendieck Site]
+    Let $(\mathcal{C}, J)$ be a Grothendieck site. A presheaf $F : \mathcal{C}^{\text{op}} \to \mathbf{Set}$ is a \emph{sheaf} if for every object $U \in \mathcal{C}$ and covering family $\{f_i : U_i \to U\}_{i \in I} \in J(U)$:
+    \begin{enumerate}
+        \item \textbf{Locality:} If $s, t \in F(U)$ satisfy $s|_{U_i} = t|_{U_i}$ for all $i \in I$, then $s = t$.
+        \item \textbf{Gluing:} For any family $\{s_i \in F(U_i)\}_{i \in I}$ satisfying $s_i|_{U_i \times_U U_j} = s_j|_{U_i \times_U U_j}$ for all $i, j \in I$, there exists a unique section $s \in F(U)$ such that $s|_{U_i} = s_i$ for all $i \in I$.
+    \end{enumerate}
+
+    \vspace{0.5em}
+    \noindent\textit{Intuition:} The sheaf axioms guarantee that local allocations can be consistently glued into outer regions. In Dahlia, calling \texttt{promote()} explicitly executes the sheaf gluing axiom to extend a local section across site boundaries.
+\end{definition}
+
+\subsection{Denotational Semantics}
+Dahlia treats the scope hierarchy as an open-set category forming a Grothendieck site $\mathcal{C}$. Memory mappings form a sheaf category $\text{Sh}(\mathcal{C}, J)$, which inherently constitutes a Grothendieck 1-topos. During compilation, the topology checker verifies that all memory promotions and restrictions strictly obey the sheaf axioms by lowering site constraints to direct reachability checks on a finite DAG.
+
+\pagebreak
+
+\section{Formal Type System}
+
+This section specifies the core type system used by the language. It is based on Hindley--Milner inference and Algorithm W, presented with bidirectional synthesis and checking judgments. The typing context $\Gamma$ additionally provides the static information from which the topology checker derives region and reachability constraints described above.
+
+Each rule has one or more premises above the line and a conclusion below it. If every premise holds, then the conclusion is valid.
+
+\begin{itemize}
+    \item $\Gamma$ is the typing context, mapping names to types.
+    \item $\tau$ and $\tau_r$ range over types.
+    \item $e$ ranges over expressions, and $b$ ranges over blocks of statements.
+    \item $\syn$ means a form synthesizes its type from the term itself.
+    \item $\chk$ means a form is checked against an expected type.
+    \item $\Rightarrow$ is used for statements and declarations that update or preserve the context.
+    \item Items listed as ``for each'' or written with subscripts such as $e_i$ must hold for every matching element.
+\end{itemize}
+
+
+\subsection{Data Types}
+\begin{itemize}
+    \item \textbf{i8-i64}: A sized integer type (\texttt{i8-i64}) with specified bit width. Unsigned integers are denoted with a \texttt{u} rather than an \texttt{i} prefix.
+    \item \textbf{bool}: A boolean type (\texttt{bool}) representing true or false values.
+    \item \textbf{char}: A single character type (\texttt{char}) (8 bits wide).
+    \item \textbf{str}: A string type (\texttt{str}) representing a sequence of characters.
+    \item \textbf{Str}: A boxed string type (\texttt{Str}) representing a heap-allocated string.
+    \item \textbf{Array}: A fixed-size array type (\texttt{[T; N]}) representing a collection of elements of type \texttt{T} with size \texttt{N}.
+\end{itemize}
+
+\subsection{Constants}
+Constants define values that cannot be changed during program execution. They use the form \texttt{const <name>: <type> = <value>}.
+
+\subsection{Generic Type Syntax}
+Polymorphic types are written with square-bracket type parameters, for example \texttt{List[A]} or \texttt{Result[A, E]}. Type constructors are written in the constructor position, followed by their type arguments in square brackets. A type scheme is written as $\forall \alpha_1, \ldots, \alpha_n.\,\tau$, where the quantified variables may be instantiated with fresh types during lookup.
+
+\begin{mathpar}
+    \inferrule* [lab=TyApp]
+    {\vdash \tau_1 \text{ type} \\
+        \cdots \\
+        \vdash \tau_n \text{ type} \\
+        C \text{ is a type constructor of arity } n}
+    {\vdash C[\tau_1, \ldots, \tau_n] \text{ type}}
+
+    \and
+
+    \inferrule* [lab=TyScheme]
+    {\vdash \tau \text{ type} \\
+        \alpha_1, \ldots, \alpha_n \notin \mathrm{ftv}(\Gamma)}
+    {\Gamma \vdash \forall \alpha_1, \ldots, \alpha_n.\,\tau \text{ scheme}}
+\end{mathpar}
+
+This means that \texttt{List[A]} is well formed when \texttt{List} expects one type argument and \texttt{A} is itself a valid type, and similarly for constructors with more parameters such as \texttt{Result[A, E]}. A type scheme such as $\forall A.\,List[A] \to A$ is not a distinct runtime type; it is a polymorphic binding that may later be instantiated with fresh type variables.
+
+\subsection{Type Checking}
+The type system employs bidirectional type checking with synthesis and checking. Blocks are typed by the value of their terminal expression or explicit return; an empty block has type \texttt{void}.
+
+\begin{itemize}
+    \item \textbf{Synthesis}: $\Gamma \vdash e \syn \tau$ means an expression synthesizes its type from the term in $\Gamma$.
+    \item \textbf{Checking}: $\Gamma \vdash e \chk \tau$ means an expression is checked against an expected type $\tau$ in $\Gamma$.
+\end{itemize}
+
+The rules below are aligned with \texttt{GRAMMAR.md} and the current AST. Dahlia does not currently have lambda syntax or explicit type annotations on expressions, so the previous $\textsc{Ann}$ and $\textsc{Abs}$ rules do not apply.
+
+\paragraph{Literal and variable rules}
+\begin{mathpar}
+    \inferrule* [lab=Lit]
+    { }
+    {\Gamma \vdash \ell \syn \tau_{\ell}}
+
+    \and
+
+    \inferrule* [lab=Var]
+    {x : \tau \in \Gamma}
+    {\Gamma \vdash x \syn \tau}
+
+    \and
+
+    \inferrule* [lab=ArrayLit]
+    {\Gamma \vdash e_i \chk \tau \text{ for each } i \in 1..n}
+    {\Gamma \vdash [e_1, \ldots, e_n] \syn [\tau; n]}
+\end{mathpar}
+
+\paragraph{Expression rules}
+\begin{mathpar}
+    \inferrule* [lab=Call]
+    {\Gamma \vdash f \syn (\tau_1, \ldots, \tau_n) \to \tau_r \\
+        \Gamma \vdash e_i \chk \tau_i \text{ for each } i \in 1..n}
+    {\Gamma \vdash f(e_1, \ldots, e_n) \syn \tau_r}
+
+    \and
+
+    \inferrule* [lab=If]
+    {\Gamma \vdash c \chk \texttt{bool} \\
+        \Gamma \vdash b_1 \syn \tau \\
+        \Gamma \vdash b_2 \syn \tau}
+    {\Gamma \vdash \texttt{if } c \{ b_1 \} \texttt{ else } \{ b_2 \} \syn \tau}
+
+    \and
+
+    \inferrule* [lab=Addr]
+    {\Gamma \vdash e \chk \tau}
+    {\Gamma \vdash \&e \syn *\tau}
+
+    \and
+
+    \inferrule* [lab=Deref]
+    {\Gamma \vdash e \syn *\tau}
+    {\Gamma \vdash *e \syn \tau}
+\end{mathpar}
+
+\paragraph{Operator rules}
+\begin{mathpar}
+    \inferrule* [lab=Arith]
+    {\Gamma \vdash e_1 \chk \tau \\
+        \Gamma \vdash e_2 \chk \tau \\
+        \tau \in \{\texttt{i8}, \texttt{i16}, \texttt{i32}, \texttt{i64}, \texttt{u8}, \texttt{u16}, \texttt{u32}, \texttt{u64}, \texttt{f32}, \texttt{f64}\}}
+    {\Gamma \vdash e_1 \; \oplus \; e_2 \syn \tau}
+
+    \and
+
+    \inferrule* [lab=Cmp]
+    {\Gamma \vdash e_1 \chk \tau \\
+        \Gamma \vdash e_2 \chk \tau \\
+        \tau \in \{\texttt{i8}, \texttt{i16}, \texttt{i32}, \texttt{i64}, \texttt{u8}, \texttt{u16}, \texttt{u32}, \texttt{u64}, \texttt{f32}, \texttt{f64}\}}
+    {\Gamma \vdash e_1 \; \diamond \; e_2 \syn \texttt{bool}}
+
+    \and
+
+    \inferrule* [lab=Eq]
+    {\Gamma \vdash e_1 \chk \tau \\
+        \Gamma \vdash e_2 \chk \tau}
+    {\Gamma \vdash e_1 \; == \; e_2 \syn \texttt{bool}}
+
+    \and
+
+    \inferrule* [lab=Unary]
+    {\Gamma \vdash e \chk \tau}
+    {\Gamma \vdash -e \syn \tau}
+
+    \and
+
+    \inferrule* [lab=Not]
+    {\Gamma \vdash e \chk \texttt{bool}}
+    {\Gamma \vdash !e \syn \texttt{bool}}
+\end{mathpar}
+
+\paragraph{Statement rules}
+\begin{mathpar}
+    \inferrule* [lab=VarDecl]
+    {\Gamma \vdash e \chk \tau}
+    {\Gamma \vdash \texttt{var } x : \tau = e \Rightarrow \Gamma, x : \tau}
+
+    \and
+
+    \inferrule* [lab=ConstDecl]
+    {\Gamma \vdash e \chk \tau}
+    {\Gamma \vdash \texttt{const } x : \tau = e \Rightarrow \Gamma, x : \tau}
+
+    \and
+
+    \inferrule* [lab=Assign]
+    {x : \tau \in \Gamma \\
+        \Gamma \vdash e \chk \tau}
+    {\Gamma \vdash x = e \Rightarrow \Gamma}
+
+    \and
+
+    \inferrule* [lab=While]
+    {\Gamma \vdash c \chk \texttt{bool} \\
+        \Gamma \vdash b \Rightarrow \Gamma}
+    {\Gamma \vdash \texttt{while } c \{ b \} \Rightarrow \Gamma}
+
+    \and
+
+    \inferrule* [lab=For]
+    {\Gamma \vdash it \syn [\tau; n] \\
+        \Gamma, x : \tau \vdash b \Rightarrow \Gamma}
+    {\Gamma \vdash \texttt{for } x : it \{ b \} \Rightarrow \Gamma}
+
+    \and
+
+    \inferrule* [lab=Return]
+    {\Gamma \vdash e \chk \tau_r}
+    {\Gamma \vdash \texttt{return } e \Rightarrow \Gamma}
+
+    \and
+
+    \inferrule* [lab=Break]
+    { }
+    {\Gamma \vdash \texttt{break} \Rightarrow \Gamma}
+\end{mathpar}
+
+\paragraph{Declarations and polymorphism}
+\begin{mathpar}
+    \inferrule* [lab=Inst]
+    {x : \forall \alpha_1, \ldots, \alpha_n.\,\tau \in \Gamma}
+    {\Gamma \vdash x \syn \tau[\alpha_1 \mapsto \beta_1, \ldots, \alpha_n \mapsto \beta_n]}
+
+    \and
+
+    \inferrule* [lab=Gen]
+    {\Gamma \vdash e \syn \tau \\
+        \vec{\alpha} = \mathrm{ftv}(\tau) \setminus \mathrm{ftv}(\Gamma)}
+    {\Gamma \vdash e \rightsquigarrow \forall \vec{\alpha}.\,\tau}
+
+    \and
+
+    \inferrule* [lab=VarDecl]
+    {\Gamma \vdash e \chk \tau}
+    {\Gamma \vdash \texttt{var } x : \tau = e \Rightarrow \Gamma, x : \tau}
+
+    \and
+
+    \inferrule* [lab=ConstDecl]
+    {\Gamma \vdash e \syn \tau \\
+        \sigma = \mathrm{Gen}(\Gamma, \tau)}
+    {\Gamma \vdash \texttt{const } x : \tau = e \Rightarrow \Gamma, x : \sigma}
+
+    \and
+
+    \inferrule* [lab=FnDecl]
+    {\Gamma, x_1 : \tau_1, \ldots, x_n : \tau_n \vdash b \syn \tau_r \\
+        \sigma = \mathrm{Gen}(\Gamma, \tau_1 \to \cdots \to \tau_n \to \tau_r)}
+    {\Gamma \vdash \texttt{fn } f(x_1 : \tau_1, \ldots, x_n : \tau_n) \{ b \} \Rightarrow \Gamma, f : \sigma}
+\end{mathpar}
+
+\begin{itemize}
+    \item \textbf{FnDecl}: function parameters are monomorphic within the body; the function name may be generalized after the body type is known.
+    \item \textbf{VarDecl}: mutable bindings remain monomorphic so later assignments preserve a single type.
+    \item \textbf{ConstDecl}: immutable bindings may be generalized because their type does not change after binding.
+    \item \textbf{StructDecl}: struct fields must have unique names and well-formed types.
+    \item \textbf{EnumDecl}: enum variants must have unique names.
+    \item \textbf{Generic types}: type constructors use square-bracket syntax such as \texttt{List[A]}; the constructor arity must match the number of supplied arguments.
+    \item \textbf{Instantiate}: each lookup of a polymorphic binding replaces quantified variables with fresh type variables.
+    \item \textbf{Generalize}: when binding a value, quantify only type variables that are free in the inferred type but not free in the environment.
+    \item \textbf{Unify}: synthesis and checking meet through unification with occurs-check.
+\end{itemize}
+
+\end{document}

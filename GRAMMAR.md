@@ -110,6 +110,9 @@ name:
     | identifier
     | dotted_member_access
 
+region_identifier:
+    | "'" identifier
+
 # Expressions
 # ------------
 index_expr: 
@@ -138,6 +141,23 @@ expr:
     | function_call
     | if_expr
 
+# Blocks
+# -----------
+
+# A region scoped block denotes a block of code that is scoped to a specific memory region 
+# and managed by an allocator.
+
+# The identifier *must* match the name of an in-scope allocator
+region_scoped_block:
+    | region_identifier "{" stmt* "}"
+
+regular_block:
+    | "{" stmt* "}"
+
+block: 
+    | region_scoped_block
+    | regular_block
+
 # Statements
 # -----------
 var_declaration: 
@@ -150,25 +170,25 @@ var_assign:
     | name "=" expr
 
 fn_declaration: 
-    | "fn" identifier "(" [ typed_identifier ("," typed_identifier)* ] ")" [":" type] ["with" name] "{" stmt* "}"
+    | "fn" identifier "(" [ typed_identifier ("," typed_identifier)* ] ")" [type] block
 
 struct_declaration: 
-    | "struct" identifier typed_identifier* struct_member* "{" stmt* "}"
+    | "struct" identifier typed_identifier* struct_member* regular_block
 
 struct_member:
     | typed_identifier # name: type
 
 enum_declaration: 
-    | "enum" identifier typed_identifier* enum_member* "{" stmt* "}"
+    | "enum" identifier typed_identifier* enum_member* regular_block
 
 enum_member:
     | identifier # name
 
 for_loop: 
-    | "for" identifier ":" expr "{" stmt* "}"
+    | "for" identifier ":" expr block
 
 while_loop: 
-    | "while" expr "{" stmt* "}"
+    | "while" expr block
 
 defer_statement:
     | "defer" stmt

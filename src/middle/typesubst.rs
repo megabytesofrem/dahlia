@@ -24,6 +24,7 @@ impl TypeScheme {
     }
 }
 
+#[derive(Debug)]
 pub enum UnifyError {
     OccursCheck(TypeId, Type),
     Mismatch { expected: Type, found: Type },
@@ -31,6 +32,7 @@ pub enum UnifyError {
 }
 
 /// Type substitution mapping type variables -> types
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypeSubst(pub HashMap<TypeId, Type>);
 
 impl TypeSubst {
